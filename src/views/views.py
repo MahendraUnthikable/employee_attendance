@@ -2,34 +2,37 @@ import logging
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import registratoinSerializer
-from .models import employeeRegistratoin
-from django.shortcuts import  get_object_or_404
+from ..serializers.serializers import registratoinSerializer
+from ..models.models import employeeRegistratoin
 from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.authtoken.models import Token
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
-# from rest_framework.authentication import TokenAuthentication
+from django.db.models import Q
 
-# logger = logging.getLogger(__file__)
+logging.basicConfig()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 
 class register(APIView):
     def post(self, request):
         serializer=registratoinSerializer(data=request.data)
-        useremail=request.data['email']
-        userphone=request.data['phone']
-        # logger.debug("This logs a debug message.")
-        if employeeRegistratoin.objects.filter(email=useremail).first():
-            return Response({"status":"email already exists!!"})
-        elif employeeRegistratoin.objects.filter(phone=userphone).first():
-             return Response({"status":"phone number already exists!!"})  
         if serializer.is_valid():
-            serializer.save()
+            useremail=request.data['email']
+            userphone=request.data['phone']
+            logger.debug("This logs a debug message.")
+            if employeeRegistratoin.objects.filter(email=useremail).first():
+                return Response({"status":"email already exists!!"})
+            elif employeeRegistratoin.objects.filter(phone=userphone).first():
+                return Response({"status":"phone number already exists!!"})  
+            serializer.save()    
             user=employeeRegistratoin.objects.filter(email=useremail).first()
             refresh = RefreshToken.for_user(user)
+            request.session['refresh-token'] = str(refresh)
             return Response({"status":"sucess",
                              "data":serializer.data,
-                             'Refresh_Token':str(refresh),
-                             'Access_Token':str(refresh.access_token)
+                             'Token':str(refresh),
                            }, 
                            status=status.HTTP_200_OK)
         else:
@@ -38,8 +41,8 @@ class register(APIView):
 
 
 class employeeProfile(APIView):
-    authentication_classes=[JWTAuthentication]
-    # permission_classes=[IsAuthenticated]
+    authentication_classes=[[SessionAuthentication, BasicAuthentication]]
+    permission_classes=[IsAuthenticated]
 
     def get(self,request,id=None):
         if id:
@@ -75,8 +78,40 @@ class employeeProfile(APIView):
 
     def delete(self,request,id=None):            
         if id:
-            item = get_object_or_404(employeeRegistratoin,id=id)
-            item.delete()
+            employeeRegistratoin.objects.filter(id=id).delete()
             return Response({"status":"success","data":"Item Deleted"})
+
+
+class employeeLogin(APIView):
+    def post(self,request):
+        serializer = registratoinSerializer(data=request.data)
+        if serializer.is_valid():
+            email = request.data['email']
+            password = request.data['password']
+            if not email:
+              return 'Missing email', 400
+            if not password:
+              return 'Missing password', 400  
+            usercreds=employeeRegistratoin.objects.filter(Q(email=email),Q(password=password)).first()
+            if usercreds is not None:
+                return Response({"status":"Login sucessfully","data":serializer.data}, status=status.HTTP_200_OK)
+            else:
+                return Response({"status":"Login Error","msg":"Access denied: wrong username or password."})
+
+
+class Logout(APIView):
+    def post(self, request):
+        try:
+            del request.session['refresh-token']
+            res =  "Logout successfull"  
+            return Response(res,status=status.HTTP_205_RESET_CONTENT)
+        except Exception as e:
+            return Response(status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+        
+            
 
 
